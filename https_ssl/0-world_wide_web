@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# A script that queries DNS records according to a given domain and subdomain
+
+domain=$1
+subdomain=$2
+
+# Function to get subdomain information
+get_subdomain_info() {
+    local sub=$1
+    local result=$(dig +short "$sub.$domain")
+    
+    if [[ -n "$result" ]]; then
+        echo "The subdomain $sub is a A record and points to $result"
+    else
+        echo "No record found for $sub.$domain"
+    fi
+}
+
+if [[ -z "$domain" ]]; then
+    echo "Usage: $0 <domain> [subdomain]"
+    exit 1
+fi
+
+if [[ -n "$subdomain" ]]; then
+    get_subdomain_info "$subdomain"
+else
+    for sub in www lb-01 web-01 web-02; do
+        get_subdomain_info "$sub"
+    done
+fi
