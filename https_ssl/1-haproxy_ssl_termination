@@ -26,24 +26,37 @@ sudo cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 # Write the new HAproxy configuration
 echo "Configuring HAproxy for SSL termination..."
 sudo tee /etc/haproxy/haproxy.cfg > /dev/null <<EOL
-# Default settings
-defaults
-    log     global
-    option  httplog
-    timeout connect 5000ms
-    timeout client  50000ms
-    timeout server  50000ms
-
-# Frontend for SSL Termination
-frontend https_front
-    bind *:443 ssl crt /etc/letsencrypt/live/www.gaddiel.tech/fullchain.pem key /etc/letsencrypt/live/www.gaddiel.tech/privkey.pem
-    acl is_root path /
-    use_backend web_backend if is_root
-    default_backend web_backend
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
     
-# Backend that serves your web content
-backend web_backend
-    server lb-01 54.166.152.6:80 check  # Backend server at IP 54.166.152.6 (lb-01)
+    tune.ssl.default-dh-param 2048
+
+defaults
+    log global
+    option httplog
+    option dontlognull
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+frontend https_front
+    bind *:443 ssl crt /etc/haproxy/certs/www.gaddiel.tech.pem
+    mode http
+    redirect scheme https if !{ ssl_fc }
+    default_backend web_servers
+
+backend web_servers
+    balance roundrobin
+    server web-01 100.27.27.252:80 check
+    server web-02 18.208.133.92:80 check
+
 EOL
 
 # Restart HAproxy to apply the new configuration
