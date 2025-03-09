@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Create a certificate using certbot and configure HAproxy to accept encrypted traffic for my subdomain www.
+
+# Update package list
+sudo apt update
+
+# Install HAproxy and Certbot
+sudo apt install -y haproxy certbot python3-certbot-nginx
+
+# Create SSL certificate using Certbot (replace yourdomain.tech with your actual domain)
+echo "Creating SSL certificate with Certbot..."
+sudo certbot certonly --standalone -d www.gaddiel.tech
+
+# Check if Certbot ran successfully
+if [ $? -eq 0 ]; then
+  echo "SSL certificate created successfully."
+else
+  echo "Error creating SSL certificate."
+  exit 1
+fi
+
+# Backup current HAproxy configuration
+echo "Backing up current HAproxy configuration..."
+sudo cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
+
+# Write the new HAproxy configuration
+echo "Configuring HAproxy for SSL termination..."
+sudo tee /etc/haproxy/haproxy.cfg > /dev/null <<EOL
+# Default settings
+defaults
+    log     global
+    option  httplog
+    timeout connect 5000ms
+    timeout client  50000ms
+    timeout server  50000ms
+
+# Frontend for SSL Termination
+frontend https_front
+    bind *:443 ssl crt /etc/letsencrypt/live/www.gaddiel.tech/fullchain.pem key /etc/letsencrypt/live/www.gaddiel.tech/privkey.pem
+    acl is_root path /
+    use_backend web_backend if is_root
+    default_backend web_backend
+    
+# Backend that serves your web content
+backend web_backend
+    server lb-01 54.166.152.6:80 check  # Backend server at IP 54.166.152.6 (lb-01)
+EOL
+
+# Restart HAproxy to apply the new configuration
+echo "Restarting HAproxy..."
+sudo systemctl restart haproxy
+
+# Verify the configuration
+echo "Verifying the SSL termination..."
+
+# Test if the SSL termination is working
+curl -sI https://www.gaddiel.tech
+if [ $? -eq 0 ]; then
+  echo "SSL termination is working! Test passed."
+else
+  echo "SSL termination test failed. Please check your configuration."
+  exit 1
+fi
+
+# Test if the root path is returning the correct content
+curl https://www.gaddiel.tech
+if [[ $(curl -s https://www.gaddiel.tech) == *"Holberton School for the win!"* ]]; then
+  echo "Root path is returning 'Holberton School for the win!' as expected."
+else
+  echo "Root path test failed. Please check your backend server."
+  exit 1
+fi
+
+# Set up automatic certificate renewal using cron job
+echo "Setting up automatic certificate renewal..."
+(crontab -l ; echo "0 0 * * * certbot renew --quiet && systemctl reload haproxy") | sudo crontab -
+
+echo "SSL termination setup complete!"
